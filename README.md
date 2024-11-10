@@ -23,7 +23,7 @@ $ cd create2crunch
 $ export FACTORY="0x0000000000ffe8b47b3e2130213b802212439497"
 $ export CALLER="0x48E516B34A1274f49457b9C6182097796D0498Cb"
 $ export INIT_CODE_HASH="0x94d114296a5af85c1fd2dc039cdaa32f1ed4b0fe0868f02d888bfc91feb645d9"
-$ cargo run --release $FACTORY $CALLER $INIT_CODE_HASH
+$ cargo run --release --bin create2crunch $FACTORY $CALLER $INIT_CODE_HASH
 ```
 
 ---
