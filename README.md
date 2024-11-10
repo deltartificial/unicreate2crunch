@@ -1,8 +1,18 @@
-# create2crunch
+# unicreate2crunch
 
-> A Rust program for finding salts that create gas-efficient Ethereum addresses via CREATE2.
+> A Rust program for mining salts that generate high-scoring, gas-efficient Ethereum addresses for Uniswap v4 deployment.
 
-Provide three arguments: a factory address (or contract that will call CREATE2), a caller address (for factory addresses that require it as a protection against frontrunning), and the keccak-256 hash of the initialization code of the contract that the factory will deploy. 
+This program mines salts using the CREATE2 function to produce Ethereum addresses that score above 100 points according to Uniswap's v4 scoring system. It leverages Uniswap's unique criteria, rewarding addresses with specific patterns of zeros and the prominent use of the number 4. By using this tool, participants can uncover candidate addresses optimized for gas efficiency and high scores, contributing to the Uniswap v4 Address Mining Challenge and potentially creating the official deployment address.
+
+Scoring System: This program integrates Uniswap’s scoring formula:
+
+- 10 points for each leading 0 nibble
+- 40 points if the address starts with four consecutive 4s
+- 20 points if the first nibble after the four 4s is NOT a 4
+- 20 points if the last four nibbles are all 4s
+- 1 point for each additional 4 elsewhere in the address
+
+Provide three arguments: a factory address (or contract that will call CREATE2), a caller address (for factory addresses that require it as a protection against frontrunning), and the keccak-256 hash of the initialization code of the contract that the factory will deploy.
 (The example below references the `Create2Factory`'s address on one of the 21 chains where it has been deployed to.)
 
 Live `Create2Factory` contracts can be found [here](https://blockscan.com/address/0x0000000000ffe8b47b3e2130213b802212439497).
@@ -11,12 +21,14 @@ Live `Create2Factory` contracts can be found [here](https://blockscan.com/addres
 $ git clone https://github.com/0age/create2crunch
 $ cd create2crunch
 $ export FACTORY="0x0000000000ffe8b47b3e2130213b802212439497"
-$ export CALLER="<YOUR_DEPLOYER_ADDRESS_OF_CHOICE_GOES_HERE>"
-$ export INIT_CODE_HASH="<HASH_OF_YOUR_CONTRACT_INIT_CODE_GOES_HERE>"
+$ export CALLER="0x48E516B34A1274f49457b9C6182097796D0498Cb"
+$ export INIT_CODE_HASH="0x94d114296a5af85c1fd2dc039cdaa32f1ed4b0fe0868f02d888bfc91feb645d9"
 $ cargo run --release $FACTORY $CALLER $INIT_CODE_HASH
 ```
 
-For each efficient address found, the salt, resultant addresses, and value *(i.e. approximate rarity)* will be written to `efficient_addresses.txt`. Verify that one of the salts actually results in the intended address before getting in too deep - ideally, the CREATE2 factory will have a view method for checking what address you'll get for submitting a particular salt. Be sure not to change the factory address or the init code without first removing any existing data to prevent the two salt types from becoming commingled. There's also a *very* simple monitoring tool available if you run `$python3 analysis.py` in another tab.
+---
+
+For each efficient address found, the salt, resultant addresses, and value _(i.e. approximate rarity)_ will be written to `efficient_addresses.txt`. Verify that one of the salts actually results in the intended address before getting in too deep - ideally, the CREATE2 factory will have a view method for checking what address you'll get for submitting a particular salt. Be sure not to change the factory address or the init code without first removing any existing data to prevent the two salt types from becoming commingled. There's also a _very_ simple monitoring tool available if you run `$python3 analysis.py` in another tab.
 
 This tool was originally built for use with [`Pr000xy`](https://github.com/0age/Pr000xy), including with [`Create2Factory`](https://github.com/0age/Pr000xy/blob/master/contracts/Create2Factory.sol) directly.
 

@@ -127,6 +127,66 @@ impl Config {
     }
 }
 
+fn score_address(address: &[u8]) -> u128 {
+    let mut score = 0u128;
+    let mut starting_zeros = true;
+    let mut starting_fours = true;
+    let mut first_four = true;
+    let mut four_counts = 0;
+
+    // Iterate over each nibble in the address
+    for i in 0..40 {
+        let current_nibble = if i % 2 == 0 {
+            address[i / 2] >> 4
+        } else {
+            address[i / 2] & 0x0F
+        };
+
+        // Leading zeros
+        if starting_zeros && current_nibble == 0 {
+            score += 10;
+            continue;
+        } else {
+            starting_zeros = false;
+        }
+
+        // Leading fours
+        if starting_fours {
+            if first_four && current_nibble != 4 {
+                return 0;
+            }
+
+            if current_nibble == 4 {
+                four_counts += 1;
+                if four_counts == 4 {
+                    score += 40;
+                    if i == 39 {
+                        score += 20;
+                    }
+                }
+            } else {
+                if four_counts == 4 {
+                    score += 20;
+                }
+                starting_fours = false;
+            }
+            first_four = false;
+        }
+
+        // Count each 4
+        if current_nibble == 4 {
+            score += 1;
+        }
+    }
+
+    // Check last 4 nibbles
+    if address[18] & 0xFF == 0x44 && address[19] & 0xFF == 0x44 {
+        score += 20;
+    }
+
+    score
+}
+
 /// Given a Config object with a factory address, a caller address, and a
 /// keccak-256 hash of the contract initialization code, search for salts that
 /// will enable the factory contract to deploy a contract to a gas-efficient
@@ -142,95 +202,50 @@ impl Config {
 /// with the resultant address and the "value" (i.e. approximate rarity) of the
 /// resultant address.
 pub fn cpu(config: Config) -> Result<(), Box<dyn Error>> {
-    // (create if necessary) and open a file where found salts will be written
     let file = output_file();
 
-    // create object for computing rewards (relative rarity) for a given address
-    let rewards = Reward::new();
-
-    // begin searching for addresses
     loop {
-        // header: 0xff ++ factory ++ caller ++ salt_random_segment (47 bytes)
         let mut header = [0; 47];
         header[0] = CONTROL_CHARACTER;
         header[1..21].copy_from_slice(&config.factory_address);
         header[21..41].copy_from_slice(&config.calling_address);
         header[41..].copy_from_slice(&FixedBytes::<6>::random()[..]);
 
-        // create new hash object
         let mut hash_header = Keccak::v256();
-
-        // update hash with header
         hash_header.update(&header);
 
-        // iterate over a 6-byte nonce and compute each address
         (0..MAX_INCREMENTER)
-            .into_par_iter() // parallelization
+            .into_par_iter()
             .for_each(|salt| {
                 let salt = salt.to_le_bytes();
                 let salt_incremented_segment = &salt[..6];
 
-                // clone the partially-hashed object
                 let mut hash = hash_header.clone();
-
-                // update with body and footer (total: 38 bytes)
                 hash.update(salt_incremented_segment);
                 hash.update(&config.init_code_hash);
 
-                // hash the payload and get the result
                 let mut res: [u8; 32] = [0; 32];
                 hash.finalize(&mut res);
 
-                // get the address that results from the hash
                 let address = <&Address>::try_from(&res[12..]).unwrap();
+                let score = score_address(address.as_slice());
 
-                // count total and leading zero bytes
-                let mut total = 0;
-                let mut leading = 21;
-                for (i, &b) in address.iter().enumerate() {
-                    if b == 0 {
-                        total += 1;
-                    } else if leading == 21 {
-                        // set leading on finding non-zero byte
-                        leading = i;
-                    }
+                if score > 100 {
+                    let address_hex = hex::encode(address);
+                    let header_hex_string = hex::encode(header);
+                    let body_hex_string = hex::encode(salt_incremented_segment);
+                    let full_salt = format!("0x{}{}", &header_hex_string[42..], &body_hex_string);
+                    
+                    let output = format!(
+                        "{full_salt} => 0x{address_hex} => {score}"
+                    );
+                    println!("{output}");
+
+                    file.lock_exclusive().expect("Couldn't lock file.");
+                    writeln!(&file, "{output}")
+                        .expect("Couldn't write to file");
+                    file.unlock().expect("Couldn't unlock file.");
                 }
-
-                // only proceed if there are at least three zero bytes
-                if total < 3 {
-                    return;
-                }
-
-                // look up the reward amount
-                let key = leading * 20 + total;
-                let reward_amount = rewards.get(&key);
-
-                // only proceed if an efficient address has been found
-                if reward_amount.is_none() {
-                    return;
-                }
-
-                // get the full salt used to create the address
-                let header_hex_string = hex::encode(header);
-                let body_hex_string = hex::encode(salt_incremented_segment);
-                let full_salt = format!("0x{}{}", &header_hex_string[42..], &body_hex_string);
-
-                // display the salt and the address.
-                let output = format!(
-                    "{full_salt} => {address} => {}",
-                    reward_amount.unwrap_or("0")
-                );
-                println!("{output}");
-
-                // create a lock on the file before writing
-                file.lock_exclusive().expect("Couldn't lock file.");
-
-                // write the result to file
-                writeln!(&file, "{output}")
-                    .expect("Couldn't write to `efficient_addresses.txt` file.");
-
-                // release the file lock
-                file.unlock().expect("Couldn't unlock file.")
             });
     }
 }
